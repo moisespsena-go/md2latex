@@ -81,7 +81,7 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		if err = m2l.ReadFile(&input, ".", ".", inputFile); err != nil {
+		if err = m2l.ReadFile(&input, path.Dir(inputFile), path.Dir(inputFile), path.Base(inputFile)); err != nil {
 			return
 		}
 
