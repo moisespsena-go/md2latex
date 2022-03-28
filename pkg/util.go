@@ -34,7 +34,7 @@ func ReadFile(out io.Writer, root, dir, pth string) (err error) {
 		rline = scanner.Text()
 		if line := strings.TrimSpace(rline); strings.HasPrefix(line, ":: ") && prev == "" {
 			npth := strings.TrimSpace(line[3:])
-			if err = ReadFile(out, root, path.Dir(npth), npth); err != nil {
+			if err = ReadFile(out, root, path.Dir(pth), npth); err != nil {
 				return fmt.Errorf("from %s#%d: %s", pth, ln, err)
 			}
 			out.Write([]byte("\n"))
