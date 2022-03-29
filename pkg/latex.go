@@ -6,9 +6,11 @@ package pkg
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
+	"unsafe"
 
 	bf "github.com/russross/blackfriday/v2"
 )
@@ -145,9 +147,13 @@ func languageAttr(info []byte) []byte {
 	return info[:endOfLang]
 }
 
-func (r *Renderer) Env(environment string, entering bool) {
+func (r *Renderer) Env(environment string, entering bool, args ...string) {
 	if entering {
-		r.w.WriteString(`\begin{` + environment + "}\n")
+		r.w.WriteString(`\begin{` + environment + "}")
+		for _, arg := range args {
+			r.w.WriteString(fmt.Sprintf("{%s}", arg))
+		}
+		r.w.WriteString("\n")
 	} else {
 		r.w.WriteString(`\end{` + environment + "}\n\n")
 	}
@@ -203,7 +209,33 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 	switch node.Type {
 
 	case bf.BlockQuote:
-		r.Env(r.EnvQuotation, entering)
+		var args []string
+		if entering && node.LastChild.Type == bf.Paragraph && node.LastChild.LastChild.Type == bf.Text {
+			// detech format:
+			// > teste
+			// > -- Author
+			text := node.LastChild.LastChild
+			if len(text.Literal) > 0 {
+				p := unsafe.Pointer(&text.Literal)
+				s := *(*string)(p)
+				if pos := strings.LastIndexByte(s, '\n'); pos > 0 {
+					if lastLine := s[pos+1:]; strings.HasPrefix(lastLine, "-- ") {
+						args = append(args, strings.TrimSpace(lastLine[3:]))
+						text.Literal = text.Literal[0:pos]
+					}
+				} else if pos == -1 && strings.HasPrefix(s, "-- ") {
+					args = append(args, strings.TrimSpace(s[3:]))
+					if text.Prev != nil {
+						text.Prev.Next = nil
+						text.Parent.LastChild = text.Prev
+					} else if node.LastChild.Prev != nil {
+						node.LastChild = node.LastChild.Prev
+						node.LastChild.Next = nil
+					}
+				}
+			}
+		}
+		r.Env(r.EnvQuotation, entering, args...)
 
 	case bf.Code:
 		// TODO: Reach a consensus for math syntax.
@@ -466,7 +498,9 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 		}
 
 	case bf.Text:
-		r.Escape(node.Literal)
+		if len(node.Literal) > 0 {
+			r.Escape(node.Literal)
+		}
 		break
 
 	default:
