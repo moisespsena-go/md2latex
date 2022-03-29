@@ -108,10 +108,9 @@ func Exec(cfg RunConfig) (err error) {
 				s := *(*string)(p)
 				if strings.HasPrefix(s, "<!-- ::") {
 					if pos := strings.Index(s, "\n"); pos > 0 {
-						s := s[7:]
-						key := s[:pos-7]
+						key := s[7:pos]
 						if cfg, ok := cfg.LatexRawFiles[key]; ok {
-							cfg.Value = append(cfg.Value, strings.TrimSpace(strings.TrimSuffix(s, "-->")))
+							cfg.Value = append(cfg.Value, strings.TrimSpace(strings.TrimSuffix(s[pos+1:], "-->")))
 						}
 					}
 				}
