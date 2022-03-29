@@ -30,6 +30,13 @@ type RunConfig struct {
 	LatexRawFiles map[string]*LatexRaw
 }
 
+type DevNull struct {
+}
+
+func (DevNull) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
 func Exec(cfg RunConfig) (err error) {
 	var (
 		input bytes.Buffer
@@ -137,12 +144,16 @@ func Exec(cfg RunConfig) (err error) {
 				default:
 					return fmt.Errorf("invalid DST value")
 				}
-				var f2 *os.File
-				if f2, err = os.Create(n); err != nil {
-					return
+				if n == os.DevNull {
+					f = DevNull{}
+				} else {
+					var f2 *os.File
+					if f2, err = os.Create(n); err != nil {
+						return
+					}
+					f = f2
+					defer f2.Close()
 				}
-				f = f2
-				defer f2.Close()
 			}
 			if main == "" {
 				main = cfg.Input[0:len(cfg.Input)-2] + "tex"

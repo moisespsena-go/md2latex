@@ -30,11 +30,6 @@ import (
 
 var cfgFile string
 
-type sConfig struct {
-	Dst   string
-	Value []string
-}
-
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "md2latex SRC DST",
