@@ -129,8 +129,12 @@ func Exec(cfg RunConfig) (err error) {
 			if strings.HasPrefix(s, "<!-- ::") {
 				if pos := strings.Index(s, "\n"); pos > 0 {
 					key := s[7:pos]
-
-					if cfg, ok := cfg.LatexRawFiles[key]; ok {
+					if key == "" {
+						// raw latex code
+						s = strings.TrimSpace(strings.TrimSuffix(s[pos+1:], "-->"))
+						w.Write([]byte(s))
+						w.Write([]byte("\n\n"))
+					} else if cfg, ok := cfg.LatexRawFiles[key]; ok {
 						cfg.Value = append(cfg.Value, strings.TrimSpace(strings.TrimSuffix(s[pos+1:], "-->")))
 					}
 				}
