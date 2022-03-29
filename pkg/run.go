@@ -37,6 +37,10 @@ func (DevNull) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+func (DevNull) Close() error {
+	return nil
+}
+
 func Exec(cfg RunConfig) (err error) {
 	var (
 		input bytes.Buffer
@@ -145,6 +149,7 @@ func Exec(cfg RunConfig) (err error) {
 					return fmt.Errorf("invalid DST value")
 				}
 				if n == os.DevNull {
+					fmt.Println("DEV NULL")
 					f = DevNull{}
 				} else {
 					var f2 *os.File
