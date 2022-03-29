@@ -97,12 +97,12 @@ var latexEscaper = [256][]byte{
 }
 
 var headers = []string{
+	`\chapter{`,
 	`\section{`,
 	`\subsection{`,
 	`\subsubsection{`,
 	`\paragraph{`,
 	`\subparagraph{`,
-	`\textbf{`,
 }
 
 func (r *Renderer) Escape(text []byte) {
@@ -290,20 +290,9 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 			break
 		}
 		if entering {
-			n := node.Level
-
-			switch n {
-			case 1:
-				r.w.WriteString(`\section{`)
-			case 2:
-				r.w.WriteString(`\subsection{`)
-			case 3:
-				r.w.WriteString(`\subsubsection{`)
-			case 4:
-				r.w.WriteString(`\paragraph{`)
-			case 5:
-				r.w.WriteString(`\subparagraph{`)
-			case 6:
+			if n := node.Level - 1; n < len(headers) {
+				r.w.WriteString(headers[n])
+			} else {
 				r.w.WriteString(`\textbf{`)
 			}
 		} else {
