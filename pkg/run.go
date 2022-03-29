@@ -68,6 +68,11 @@ func Exec(cfg RunConfig) (err error) {
 		}
 
 		createFile = func(pth string, data []byte) (err error) {
+			defer func() {
+				if err != nil {
+					err = fmt.Errorf("create %q: %s", pth, err)
+				}
+			}()
 			d := filepath.Dir(pth)
 			if err = os.MkdirAll(d, 0775); err != nil {
 				return
