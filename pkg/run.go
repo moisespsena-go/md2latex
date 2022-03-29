@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -64,6 +65,20 @@ func Exec(cfg RunConfig) (err error) {
 			}
 
 			return nil
+		}
+
+		createFile = func(pth string, data []byte) (err error) {
+			d := filepath.Dir(pth)
+			if err = os.MkdirAll(d, 0775); err != nil {
+				return
+			}
+			var f *os.File
+			if f, err = os.Create(pth); err != nil {
+				return
+			}
+			defer f.Close()
+			_, err = f.Write(data)
+			return
 		}
 	)
 
@@ -126,6 +141,15 @@ func Exec(cfg RunConfig) (err error) {
 	ast := md.Parse(input.Bytes())
 	result := renderer.Render(ast)
 
+	var configNames []*LatexRaw
+
+	for _, cfg := range cfg.LatexRawFiles {
+		configNames = append(configNames, cfg)
+	}
+	sort.Slice(configNames, func(i, j int) bool {
+		return configNames[i].Dst < configNames[j].Dst
+	})
+
 	switch cfg.Output {
 	case "-":
 		os.Stdout.Write(result)
@@ -175,14 +199,7 @@ func Exec(cfg RunConfig) (err error) {
 			if err = addFileToTarWriter(main, result, tarWriter); err != nil {
 				return
 			}
-			var configNames []*LatexRaw
 
-			for _, cfg := range cfg.LatexRawFiles {
-				configNames = append(configNames, cfg)
-			}
-			sort.Slice(configNames, func(i, j int) bool {
-				return configNames[i].Dst < configNames[j].Dst
-			})
 			for _, c := range configNames {
 				if err = addFileToTarWriter(c.Dst, []byte(strings.Join(c.Value, "\n")), tarWriter); err != nil {
 					return
@@ -190,19 +207,18 @@ func Exec(cfg RunConfig) (err error) {
 			}
 		} else {
 			if cfg.JoinedOutput != "" {
-				var f *os.File
-				if f, err = os.Create(cfg.JoinedOutput); err != nil {
+				if err = createFile(cfg.JoinedOutput, input.Bytes()); err != nil {
 					return
 				}
-				f.Write(input.Bytes())
-				defer f.Close()
 			}
-			var f *os.File
-			if f, err = os.Create(n); err != nil {
+			if err = createFile(n, result); err != nil {
 				return
 			}
-			f.Write(result)
-			defer f.Close()
+			for _, c := range configNames {
+				if err = createFile(c.Dst, []byte(strings.Join(c.Value, "\n"))); err != nil {
+					return
+				}
+			}
 		}
 	}
 
