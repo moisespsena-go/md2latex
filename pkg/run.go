@@ -148,10 +148,12 @@ func Exec(cfg RunConfig) (err error) {
 				default:
 					return fmt.Errorf("invalid DST value")
 				}
-				if n == os.DevNull {
-					fmt.Println("DEV NULL")
+				switch n {
+				case os.DevNull, "/dev/null":
+					fmt.Println("@@ DEV NULL")
 					f = DevNull{}
-				} else {
+				default:
+					fmt.Println("@@", n)
 					var f2 *os.File
 					if f2, err = os.Create(n); err != nil {
 						return
