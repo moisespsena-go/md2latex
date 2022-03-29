@@ -68,6 +68,7 @@ func Exec(cfg RunConfig) (err error) {
 		}
 
 		createFile = func(pth string, data []byte) (err error) {
+			pth = filepath.Join(cfg.RootDir, pth)
 			defer func() {
 				if err != nil {
 					err = fmt.Errorf("create %q: %s", pth, err)
