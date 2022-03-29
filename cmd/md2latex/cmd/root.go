@@ -34,20 +34,40 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:   "md2latex SRC DST",
 	Short: "converts markdown to latex",
-	Args:  cobra.ExactArgs(2),
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	//	Run: func(cmd *cobra.Command, args []string) { },
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
+		if len(args) == 0 {
+			args = []string{viper.GetString("src"), viper.GetString("dst")}
+		}
+		if len(args) != 2 {
+			return fmt.Errorf("accepts 2 arg(s), received %d", len(args))
+		}
+
 		var (
-			flags     = cmd.Flags()
+			flags = cmd.Flags()
+
+			orSlice = func(a, b string) []string {
+				if v, _ := flags.GetStringSlice(a); len(v) > 0 {
+					return v
+				}
+				return viper.GetStringSlice(b)
+			}
+			orString = func(a string) string {
+				if v, _ := flags.GetString(a); len(v) > 0 {
+					return v
+				}
+				return viper.GetString(a)
+			}
+
 			inputFile = args[0]
 			config    = make(map[string]*m2l.LatexRaw)
-			joined, _ = flags.GetString("joined")
-			work, _   = flags.GetString("work-dir")
+			joined    = orString("joined")
+			work      = orString("work-dir")
 		)
 
-		if cfg, _ := flags.GetStringSlice("latex-raw-file"); len(cfg) > 0 {
+		if cfg := orSlice("latex-raw-file", "latex-raw-files"); len(cfg) > 0 {
 			for _, v := range cfg {
 				if pos := strings.IndexByte(v, ':'); pos > 0 {
 					config[v[0:pos]] = &m2l.LatexRaw{Dst: v[pos+1:]}
