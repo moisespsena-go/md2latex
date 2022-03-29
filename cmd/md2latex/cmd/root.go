@@ -67,6 +67,10 @@ var rootCmd = &cobra.Command{
 			work      = orString("work-dir")
 		)
 
+		if work == "" {
+			work = "."
+		}
+
 		if cfg := orSlice("latex-raw-file", "latex-raw-files"); len(cfg) > 0 {
 			for _, v := range cfg {
 				if pos := strings.IndexByte(v, ':'); pos > 0 {
@@ -108,7 +112,7 @@ func init() {
 	flags := rootCmd.Flags()
 	flags.StringSliceP("latex-raw-file", "R", []string{}, "latex raw files. Example: -R 'ID:DEST.tex'")
 	flags.StringP("joined", "J", "", "name of joined markdown file. If not set, don't save it. Format: %D% (dir), %B% (base name without ext), %BE% (basename with ext)")
-	flags.StringP("work-dir", "w", ".", "work directory")
+	flags.StringP("work-dir", "w", "", "work directory")
 }
 
 // initConfig reads in config file and ENV variables if set.

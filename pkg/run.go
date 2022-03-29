@@ -114,7 +114,7 @@ func Exec(cfg RunConfig) (err error) {
 	fmt.Fprintln(os.Stderr, "joined output: ", cfg.JoinedOutput)
 	defer fmt.Fprintln(os.Stderr, "======>> end", cfg.Input, "<<======")
 
-	if err = ReadFile(&input, cfg.RootDir, path.Dir(cfg.Input), path.Base(cfg.Input)); err != nil {
+	if err = ReadFile(&input, cfg.RootDir, filepath.Join(cfg.RootDir, path.Dir(cfg.Input)), path.Base(cfg.Input)); err != nil {
 		return
 	}
 
