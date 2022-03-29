@@ -149,7 +149,7 @@ func Exec(cfg RunConfig) (err error) {
 					return fmt.Errorf("invalid DST value")
 				}
 				switch n {
-				case os.DevNull, "/dev/null":
+				case "/dev/null":
 					fmt.Println("@@ DEV NULL")
 					f = DevNull{}
 				default:
@@ -165,6 +165,9 @@ func Exec(cfg RunConfig) (err error) {
 			if main == "" {
 				main = cfg.Input[0:len(cfg.Input)-2] + "tex"
 			}
+
+			fmt.Println(fmt.Sprintf("++++ %T%[1]s", f))
+
 			tarWriter := tar.NewWriter(f)
 			defer tarWriter.Close()
 
