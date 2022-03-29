@@ -48,11 +48,16 @@ var rootCmd = &cobra.Command{
 		var (
 			flags = cmd.Flags()
 
-			orSlice = func(a, b string) []string {
-				if v, _ := flags.GetStringSlice(a); len(v) > 0 {
-					return v
+			orSliceMap = func(a, b string) (ret []string) {
+				if ret, _ = flags.GetStringSlice(a); len(ret) > 0 {
+					return
 				}
-				return viper.GetStringSlice(b)
+				if m := viper.GetStringMapString(b); len(m) > 0 {
+					for k, v := range m {
+						ret = append(ret, fmt.Sprintf("%s:%s", k, v))
+					}
+				}
+				return nil
 			}
 			orString = func(a string) string {
 				if v, _ := flags.GetString(a); len(v) > 0 {
@@ -65,13 +70,17 @@ var rootCmd = &cobra.Command{
 			config    = make(map[string]*m2l.LatexRaw)
 			joined    = orString("joined")
 			work      = orString("work-dir")
+
+			opts = m2l.Opts{
+				EnvQuotation: viper.GetString("latex.envs.quotation"),
+			}
 		)
 
 		if work == "" {
 			work = "."
 		}
 
-		if cfg := orSlice("latex-raw-file", "latex-raw-files"); len(cfg) > 0 {
+		if cfg := orSliceMap("latex-raw-file", "latex.raw-files"); len(cfg) > 0 {
 			for _, v := range cfg {
 				if pos := strings.IndexByte(v, ':'); pos > 0 {
 					config[v[0:pos]] = &m2l.LatexRaw{Dst: v[pos+1:]}
@@ -86,6 +95,7 @@ var rootCmd = &cobra.Command{
 			Now:           time.Now(),
 			LatexRawFiles: config,
 			Output:        args[1],
+			Opts:          opts,
 		})
 	},
 }

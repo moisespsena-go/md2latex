@@ -657,6 +657,6 @@ func Run(input []byte, opts ...bf.Option) []byte {
 	optList := []bf.Option{bf.WithRenderer(renderer), bf.WithExtensions(bf.CommonExtensions)}
 	optList = append(optList, opts...)
 	parser := bf.New(optList...)
-	ast := parser.Parse([]byte(input))
+	ast := parser.Parse(input)
 	return renderer.Render(ast)
 }

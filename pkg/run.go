@@ -29,6 +29,7 @@ type RunConfig struct {
 	RootDir       string
 	JoinedOutput  string
 	LatexRawFiles map[string]*LatexRaw
+	Opts          Opts
 }
 
 type DevNull struct {
@@ -118,29 +119,29 @@ func Exec(cfg RunConfig) (err error) {
 		return
 	}
 
-	extensions := bf.CommonExtensions | bf.Titleblock
-	renderer := &Renderer{Opts: Opts{
-		HtmlBlockHandler: func(r *Renderer, w io.Writer, node *bf.Node, entering bool) bf.WalkStatus {
-			switch node.Type {
-			case bf.HTMLSpan:
-				return bf.GoToNext
-			case bf.HTMLBlock:
-				p := unsafe.Pointer(&node.Literal)
-				s := *(*string)(p)
-				if strings.HasPrefix(s, "<!-- ::") {
-					if pos := strings.Index(s, "\n"); pos > 0 {
-						key := s[7:pos]
+	cfg.Opts.HtmlBlockHandler = func(r *Renderer, w io.Writer, node *bf.Node, entering bool) bf.WalkStatus {
+		switch node.Type {
+		case bf.HTMLSpan:
+			return bf.GoToNext
+		case bf.HTMLBlock:
+			p := unsafe.Pointer(&node.Literal)
+			s := *(*string)(p)
+			if strings.HasPrefix(s, "<!-- ::") {
+				if pos := strings.Index(s, "\n"); pos > 0 {
+					key := s[7:pos]
 
-						if cfg, ok := cfg.LatexRawFiles[key]; ok {
-							cfg.Value = append(cfg.Value, strings.TrimSpace(strings.TrimSuffix(s[pos+1:], "-->")))
-						}
+					if cfg, ok := cfg.LatexRawFiles[key]; ok {
+						cfg.Value = append(cfg.Value, strings.TrimSpace(strings.TrimSuffix(s[pos+1:], "-->")))
 					}
 				}
-				return bf.GoToNext
 			}
 			return bf.GoToNext
-		},
-	}}
+		}
+		return bf.GoToNext
+	}
+
+	extensions := bf.CommonExtensions | bf.Titleblock
+	renderer := NewRenderer(cfg.Opts)
 
 	md := bf.New(bf.WithRenderer(renderer), bf.WithExtensions(extensions))
 
