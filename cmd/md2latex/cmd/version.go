@@ -1,5 +1,5 @@
 /*
-Copyright © 2022 Moises P. Sena <moisespsena@gmail.com>
+Copyright © 2022 Moises P. Sena <moisepssena@gmail.com>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,13 +13,25 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package main
+package cmd
 
-import "github.com/moisespsena-go/md2latex/cmd/md2latex/cmd"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
 
 var CommitID string
 
-func main() {
-	cmd.CommitID = CommitID
-	cmd.Execute()
+// versionCmd represents the version command
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("Commit ID:", CommitID)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(versionCmd)
 }
