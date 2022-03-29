@@ -134,26 +134,16 @@ func Exec(cfg RunConfig) (err error) {
 			n = n[4:]
 			var main string
 			var f io.Writer
-			switch n[0] {
-			case '-':
+			parts := strings.Split(n, ":")
+			switch parts[0] {
+			case "-":
 				f = os.Stdout
 			default:
-				parts := strings.Split(n, ":")
-				switch len(parts) {
-				case 1:
-					n = parts[0]
-				case 2:
-					n = parts[0]
-					main = parts[1]
-				default:
-					return fmt.Errorf("invalid DST value")
-				}
+				n = parts[0]
 				switch n {
 				case "/dev/null":
-					fmt.Println("@@ DEV NULL")
 					f = DevNull{}
 				default:
-					fmt.Println("@@", n)
 					var f2 *os.File
 					if f2, err = os.Create(n); err != nil {
 						return
@@ -162,11 +152,16 @@ func Exec(cfg RunConfig) (err error) {
 					defer f2.Close()
 				}
 			}
+			switch len(parts) {
+			case 1:
+			case 2:
+				main = parts[1]
+			default:
+				return fmt.Errorf("invalid DST value")
+			}
 			if main == "" {
 				main = cfg.Input[0:len(cfg.Input)-2] + "tex"
 			}
-
-			fmt.Println(fmt.Sprintf("++++ %T%[1]s", f))
 
 			tarWriter := tar.NewWriter(f)
 			defer tarWriter.Close()
