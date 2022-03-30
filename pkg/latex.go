@@ -44,7 +44,8 @@ type Renderer struct {
 	Opts
 
 	// If text is within quotes.
-	quoted bool
+	quoted    bool
+	quoteOpen bool
 }
 
 func NewRenderer(opts Opts) *Renderer {
@@ -93,8 +94,8 @@ var latexEscaper = map[rune][]byte{
 	'{':  []byte(`\{`),
 	'}':  []byte(`\}`),
 	'~':  []byte(`\~`),
+	'\'': []byte(``),
 	'"':  []byte(`\enquote{`),
-	'“':  []byte(`\enquote{`),
 }
 
 var headers = []string{
@@ -125,13 +126,41 @@ func (r *Renderer) Escape(t []byte) {
 
 		// escape a character
 		switch text[i] {
-		case '"', '“':
+		case '"':
 			if r.quoted {
 				r.w.WriteByte('}')
 				r.quoted = false
 			} else {
 				r.w.Write(latexEscaper[text[i]])
 				r.quoted = true
+			}
+		case '\'':
+			if r.quoted {
+				if r.quoteOpen && i < len(text) {
+					switch text[i+1] {
+					case '\r', '\n', ' ', '\t', '.':
+						r.w.WriteRune('’')
+					}
+				} else {
+					r.w.WriteRune('‘')
+				}
+				r.quoted = false
+				r.quoteOpen = false
+			} else {
+				if i > 0 {
+					switch text[i-1] {
+					case '\r', '\n', ' ', '\t', '.':
+						r.w.WriteRune('‘')
+						r.quoted = true
+						r.quoteOpen = true
+					default:
+						r.w.WriteRune('’')
+					}
+				} else {
+					r.w.WriteRune('‘')
+					r.quoted = true
+					r.quoteOpen = true
+				}
 			}
 		default:
 			r.w.Write(latexEscaper[text[i]])
