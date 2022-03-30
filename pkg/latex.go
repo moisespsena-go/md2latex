@@ -83,7 +83,7 @@ var cellAlignment = [4]byte{
 	bf.TableAlignmentCenter: 'c',
 }
 
-var latexEscaper = [256][]byte{
+var latexEscaper = map[rune][]byte{
 	'#':  []byte(`\#`),
 	'$':  []byte(`\$`),
 	'%':  []byte(`\%`),
@@ -94,6 +94,7 @@ var latexEscaper = [256][]byte{
 	'}':  []byte(`\}`),
 	'~':  []byte(`\~`),
 	'"':  []byte(`\enquote{`),
+	'“':  []byte(`\enquote{`),
 }
 
 var headers = []string{
@@ -105,7 +106,8 @@ var headers = []string{
 	`\subparagraph{`,
 }
 
-func (r *Renderer) Escape(text []byte) {
+func (r *Renderer) Escape(t []byte) {
+	text := []rune(string(t))
 	for i := 0; i < len(text); i++ {
 		// directly copy normal characters
 		org := i
@@ -115,14 +117,15 @@ func (r *Renderer) Escape(text []byte) {
 		}
 
 		if i > org {
-			r.w.Write(text[org:i])
+			r.w.Write([]byte(string(text[org:i])))
 			if i >= len(text) {
 				break
 			}
 		}
 
 		// escape a character
-		if text[i] == '"' {
+		switch text[i] {
+		case '"', '“':
 			if r.quoted {
 				r.w.WriteByte('}')
 				r.quoted = false
@@ -130,7 +133,7 @@ func (r *Renderer) Escape(text []byte) {
 				r.w.Write(latexEscaper[text[i]])
 				r.quoted = true
 			}
-		} else {
+		default:
 			r.w.Write(latexEscaper[text[i]])
 		}
 	}
