@@ -60,3 +60,12 @@ func readFile(out io.Writer, root, dir, pth string, count *int, depth int) (err 
 	defer f.Close()
 	return
 }
+
+func FormatFileName(fmt, name string) string {
+	return strings.ReplaceAll(
+		strings.ReplaceAll(
+			strings.ReplaceAll(
+				fmt, "%D%", path.Dir(name)),
+			"%B%", strings.TrimSuffix(path.Base(name), ".md")),
+		"%BE%", path.Base(name))
+}

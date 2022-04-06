@@ -101,12 +101,7 @@ func Exec(cfg RunConfig) (err error) {
 		if cfg.Input == "-" {
 			cfg.JoinedOutput = ""
 		} else {
-			cfg.JoinedOutput = path.Clean(strings.ReplaceAll(
-				strings.ReplaceAll(
-					strings.ReplaceAll(
-						cfg.JoinedOutput, "%D%", path.Dir(cfg.Input)),
-					"%B%", strings.TrimSuffix(path.Base(cfg.Input), ".md")),
-				"%BE%", path.Base(cfg.Input)))
+			cfg.JoinedOutput = path.Clean(FormatFileName(cfg.JoinedOutput, cfg.Input))
 		}
 	}
 
@@ -144,13 +139,27 @@ func Exec(cfg RunConfig) (err error) {
 		return bf.GoToNext
 	}
 
-	extensions := bf.CommonExtensions | bf.Titleblock
+	extensions := bf.CommonExtensions | bf.Footnotes | bf.DefinitionLists
 	renderer := NewRenderer(cfg.Opts)
 
-	md := bf.New(bf.WithRenderer(renderer), bf.WithExtensions(extensions))
+	md := bf.New(
+		bf.WithFileName(cfg.Input),
+		bf.WithRootDir(cfg.RootDir),
+		bf.WithRenderer(renderer),
+		bf.WithExtensions(extensions),
+	)
 
 	ast := md.Parse(input.Bytes())
-	result := renderer.Render(ast)
+
+	var (
+		result bytes.Buffer
+		w      io.Writer = &result
+	)
+	if cfg.Output == "-" {
+		w = os.Stdout
+	}
+
+	renderer.Render(w, ast)
 
 	var configNames []*LatexRaw
 
@@ -163,7 +172,6 @@ func Exec(cfg RunConfig) (err error) {
 
 	switch cfg.Output {
 	case "-":
-		os.Stdout.Write(result)
 	default:
 		if n := cfg.Output; strings.HasPrefix(n, "tar:") {
 			n = n[4:]
@@ -207,7 +215,7 @@ func Exec(cfg RunConfig) (err error) {
 				}
 			}
 
-			if err = addFileToTarWriter(main, result, tarWriter); err != nil {
+			if err = addFileToTarWriter(main, result.Bytes(), tarWriter); err != nil {
 				return
 			}
 
@@ -222,7 +230,7 @@ func Exec(cfg RunConfig) (err error) {
 					return
 				}
 			}
-			if err = createFile(n, result); err != nil {
+			if err = createFile(n, result.Bytes()); err != nil {
 				return
 			}
 			for _, c := range configNames {

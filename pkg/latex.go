@@ -10,9 +10,11 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 
 	bf "github.com/russross/blackfriday/v2"
+	"github.com/shopspring/decimal"
 )
 
 type Opts struct {
@@ -36,11 +38,22 @@ type Opts struct {
 	HtmlBlockHandler func(r *Renderer, w io.Writer, node *bf.Node, entering bool) bf.WalkStatus
 }
 
+var WriteString = io.WriteString
+
+func WriteByte(w io.Writer, b byte) (n int, err error) {
+	return w.Write([]byte{b})
+}
+
+func WriteRune(w io.Writer, r rune) (n int, err error) {
+	if r < utf8.RuneSelf {
+		return w.Write([]byte{byte(r)})
+	}
+	return w.Write([]byte(string(r)))
+}
+
 // Renderer is a type that implements the Renderer interface for LaTeX
 // output.
 type Renderer struct {
-	w bytes.Buffer
-
 	Opts
 
 	// If text is within quotes.
@@ -95,19 +108,18 @@ var latexEscaper = map[rune][]byte{
 	'}':  []byte(`\}`),
 	'~':  []byte(`\~`),
 	'\'': []byte(``),
-	'"':  []byte(`\enquote{`),
 }
 
 var headers = []string{
-	`\chapter{`,
-	`\section{`,
-	`\subsection{`,
-	`\subsubsection{`,
-	`\paragraph{`,
-	`\subparagraph{`,
+	`chapter`,
+	`section`,
+	`subsection`,
+	`subsubsection`,
+	`paragraph`,
+	`subparagraph`,
 }
 
-func (r *Renderer) Escape(t []byte) {
+func (r *Renderer) Escape(w io.Writer, t []byte) {
 	text := []rune(string(t))
 	for i := 0; i < len(text); i++ {
 		// directly copy normal characters
@@ -118,7 +130,7 @@ func (r *Renderer) Escape(t []byte) {
 		}
 
 		if i > org {
-			r.w.Write([]byte(string(text[org:i])))
+			w.Write([]byte(string(text[org:i])))
 			if i >= len(text) {
 				break
 			}
@@ -128,10 +140,10 @@ func (r *Renderer) Escape(t []byte) {
 		switch text[i] {
 		case '"':
 			if r.quoted {
-				r.w.WriteByte('}')
+				WriteRune(w, '“')
 				r.quoted = false
 			} else {
-				r.w.Write(latexEscaper[text[i]])
+				WriteRune(w, '“')
 				r.quoted = true
 			}
 		case '\'':
@@ -139,10 +151,10 @@ func (r *Renderer) Escape(t []byte) {
 				if r.quoteOpen && i < len(text) {
 					switch text[i+1] {
 					case '\r', '\n', ' ', '\t', '.':
-						r.w.WriteRune('’')
+						WriteRune(w, '’')
 					}
 				} else {
-					r.w.WriteRune('‘')
+					WriteRune(w, '‘')
 				}
 				r.quoted = false
 				r.quoteOpen = false
@@ -150,20 +162,20 @@ func (r *Renderer) Escape(t []byte) {
 				if i > 0 {
 					switch text[i-1] {
 					case '\r', '\n', ' ', '\t', '.':
-						r.w.WriteRune('‘')
+						WriteRune(w, '‘')
 						r.quoted = true
 						r.quoteOpen = true
 					default:
-						r.w.WriteRune('’')
+						WriteRune(w, '’')
 					}
 				} else {
-					r.w.WriteRune('‘')
+					WriteRune(w, '‘')
 					r.quoted = true
 					r.quoteOpen = true
 				}
 			}
 		default:
-			r.w.Write(latexEscaper[text[i]])
+			w.Write(latexEscaper[text[i]])
 		}
 	}
 }
@@ -179,23 +191,23 @@ func languageAttr(info []byte) []byte {
 	return info[:endOfLang]
 }
 
-func (r *Renderer) Env(environment string, entering bool, args ...string) {
+func (r *Renderer) Env(w io.Writer, environment string, entering bool, args ...string) {
 	if entering {
-		r.w.WriteString(`\begin{` + environment + "}")
+		WriteString(w, `\begin{`+environment+"}")
 		for _, arg := range args {
-			r.w.WriteString(fmt.Sprintf("{%s}", arg))
+			WriteString(w, fmt.Sprintf("{%s}", arg))
 		}
-		r.w.WriteString("\n")
+		WriteString(w, "\n")
 	} else {
-		r.w.WriteString(`\end{` + environment + "}\n\n")
+		WriteString(w, `\end{`+environment+"}\n\n")
 	}
 }
 
-func (r *Renderer) Cmd(command string, entering bool) {
+func (r *Renderer) Cmd(w io.Writer, command string, entering bool) {
 	if entering {
-		r.w.WriteString(`\` + command + `{`)
+		WriteString(w, `\`+command+`{`)
 	} else {
-		r.w.WriteByte('}')
+		WriteByte(w, '}')
 	}
 }
 
@@ -239,7 +251,6 @@ func hasPrefixCaseInsensitive(s, prefix []byte) bool {
 // appending the needed line breaks. Line breaks are never prepended.
 func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.WalkStatus {
 	switch node.Type {
-
 	case bf.BlockQuote:
 		var args []string
 		if entering && node.LastChild.Type == bf.Paragraph && node.LastChild.LastChild.Type == bf.Text {
@@ -267,54 +278,54 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 				}
 			}
 		}
-		r.Env(r.EnvQuotation, entering, args...)
+		r.Env(w, r.EnvQuotation, entering, args...)
 
 	case bf.Code:
 		// TODO: Reach a consensus for math syntax.
 		if bytes.HasPrefix(node.Literal, []byte("$$ ")) {
 			// Inline math
-			r.w.WriteByte('$')
-			r.w.Write(node.Literal[3:])
-			r.w.WriteByte('$')
+			WriteByte(w, '$')
+			w.Write(node.Literal[3:])
+			WriteByte(w, '$')
 			break
 		}
 		// 'lstinline' needs an ASCII delimiter that is not in the node content.
 		// TODO: Find a more elegant fallback for when the code lists all ASCII characters.
 		delimiter := getDelimiter(node.Literal)
-		r.w.WriteString(`\lstinline`)
+		WriteString(w, `\lstinline`)
 		if delimiter != 0 {
-			r.w.WriteByte(delimiter)
-			r.w.Write(node.Literal)
-			r.w.WriteByte(delimiter)
+			WriteByte(w, delimiter)
+			w.Write(node.Literal)
+			WriteByte(w, delimiter)
 		} else {
-			r.w.WriteString("!<RENDERING ERROR: no delimiter found>!")
+			WriteString(w, "!<RENDERING ERROR: no delimiter found>!")
 		}
 
 	case bf.CodeBlock:
 		lang := languageAttr(node.Info)
 		if bytes.Compare(lang, []byte("math")) == 0 {
-			r.w.WriteString("\\[\n")
-			r.w.Write(node.Literal)
-			r.w.WriteString("\\]\n\n")
+			WriteString(w, "\\[\n")
+			w.Write(node.Literal)
+			WriteString(w, "\\]\n\n")
 			break
 		}
-		r.w.WriteString(`\begin{lstlisting}[language=`)
-		r.w.Write(lang)
-		r.w.WriteString("]\n")
-		r.w.Write(node.Literal)
-		r.w.WriteString(`\end{lstlisting}` + "\n\n")
+		WriteString(w, `\begin{lstlisting}[language=`)
+		w.Write(lang)
+		WriteString(w, "]\n")
+		w.Write(node.Literal)
+		WriteString(w, `\end{lstlisting}`+"\n\n")
 
 	case bf.Del:
-		r.Cmd("sout", entering)
+		r.Cmd(w, "sout", entering)
 
 	case bf.Document:
 		break
 
 	case bf.Emph:
-		r.Cmd("emph", entering)
+		r.Cmd(w, "emph", entering)
 
 	case bf.Hardbreak:
-		r.w.WriteString(`~\\` + "\n")
+		WriteString(w, `~\\`+"\n")
 
 	case bf.Heading:
 		if node.IsTitleblock {
@@ -323,18 +334,39 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 		}
 		if entering {
 			if n := node.Level - 1; n < len(headers) {
-				r.w.WriteString(headers[n])
+				WriteByte(w, '\\')
+				WriteString(w, headers[n])
+				if len(node.HeadingData.Config) > 0 {
+					cfg := string(node.HeadingData.Config[:])
+					switch cfg {
+					case "*", "**":
+						if node.FirstChild != nil && node.FirstChild.Type == bf.Text {
+							WriteString(w, "*[")
+							w.Write(node.FirstChild.Literal)
+							if cfg == "*" {
+								WriteString(w, "]{")
+								w.Write(node.FirstChild.Literal)
+								WriteString(w, "}\n\\addcontentsline{toc}{")
+								WriteString(w, headers[n])
+								WriteByte(w, '}')
+							} else {
+								WriteByte(w, ']')
+							}
+						}
+					}
+				}
+				WriteByte(w, '{')
 			} else {
-				r.w.WriteString(`\textbf{`)
+				WriteString(w, `\textbf{`)
 			}
 		} else {
-			r.w.WriteByte('}')
+			WriteByte(w, '}')
 			switch node.Level {
 			// Paragraph need no newline.
 			case 1, 2, 3:
-				r.w.WriteByte('\n')
+				WriteByte(w, '\n')
 			default:
-				r.w.WriteByte(' ')
+				WriteByte(w, ' ')
 			}
 		}
 
@@ -353,31 +385,31 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 		break
 
 	case bf.HorizontalRule:
-		r.w.WriteString(`\HRule{}` + "\n")
+		WriteString(w, `\HRule{}`+"\n")
 
 	case bf.Image:
 		if entering {
 			dest := node.LinkData.Destination
 			if hasPrefixCaseInsensitive(dest, []byte("http://")) || hasPrefixCaseInsensitive(dest, []byte("https://")) {
-				r.w.WriteString(`\url{`)
-				r.w.Write(dest)
-				r.w.WriteByte('}')
+				WriteString(w, `\url{`)
+				w.Write(dest)
+				WriteByte(w, '}')
 				return bf.SkipChildren
 			}
 			if node.LinkData.Title != nil {
-				r.w.WriteString(`\begin{figure}[!ht]` + "\n")
+				WriteString(w, `\begin{figure}[!ht]`+"\n")
 			}
-			r.w.WriteString(`\begin{center}` + "\n")
+			WriteString(w, `\begin{center}`+"\n")
 			// Trim extension so that LaTeX loads the most appropriate file.
 			ext := filepath.Ext(string(dest))
 			dest = dest[:len(dest)-len(ext)]
-			r.w.WriteString(`\includegraphics[max width=\textwidth, max height=\textheight]{`)
-			r.w.Write(dest)
-			r.w.WriteString("}\n" + `\end{center}` + "\n")
+			WriteString(w, `\includegraphics[max width=\textwidth, max height=\textheight]{`)
+			w.Write(dest)
+			WriteString(w, "}\n"+`\end{center}`+"\n")
 			if node.LinkData.Title != nil {
-				r.w.WriteString(`\caption{`)
-				r.w.Write(node.LinkData.Title)
-				r.w.WriteString("}\n" + `\end{figure}` + "\n")
+				WriteString(w, `\caption{`)
+				w.Write(node.LinkData.Title)
+				WriteString(w, "}\n"+`\end{figure}`+"\n")
 			}
 		}
 		return bf.SkipChildren
@@ -385,13 +417,13 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 	case bf.Item:
 		if entering {
 			if node.ListFlags&bf.ListTypeTerm != 0 {
-				r.w.WriteString(`\item [`)
+				WriteString(w, `\item [`)
 			} else if node.ListFlags&bf.ListTypeDefinition == 0 {
-				r.w.WriteString(`\item `)
+				WriteString(w, `\item `)
 			}
 		} else {
 			if node.ListFlags&bf.ListTypeTerm != 0 {
-				r.w.WriteString("] ")
+				WriteString(w, "] ")
 			}
 		}
 
@@ -403,45 +435,45 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 		if needSkipLink(r.Flags, dest) {
 			if node.FirstChild != node.LastChild || node.FirstChild.Type != bf.Text || bytes.Compare(dest, node.FirstChild.Literal) != 0 {
 				if !entering {
-					r.w.WriteString(`\footnote{\nolinkurl{`)
-					r.w.Write(dest)
-					r.w.WriteString(`}}`)
+					WriteString(w, `\footnote{\nolinkurl{`)
+					w.Write(dest)
+					WriteString(w, `}}`)
 				}
 				break
 			}
 			// Link content (only one Text child) and destination are identical (e.g.
 			// with autolink).
-			r.w.WriteString(`\nolinkurl{`)
-			r.w.Write(dest)
-			r.w.WriteByte('}')
+			WriteString(w, `\nolinkurl{`)
+			w.Write(dest)
+			WriteByte(w, '}')
 			return bf.SkipChildren
 		}
 
 		// Footnotes
 		if node.NoteID != 0 {
 			if entering {
-				r.w.WriteString(`\footnote{`)
-				w := bytes.Buffer{}
+				WriteString(w, `\footnote{`)
+				w := &bytes.Buffer{}
 				footnoteNode := node.LinkData.Footnote
 				footnoteNode.Walk(func(node *bf.Node, entering bool) bf.WalkStatus {
 					if node == footnoteNode {
 						return bf.GoToNext
 					}
-					return r.RenderNode(&w, node, entering)
+					return r.RenderNode(w, node, entering)
 				})
-				r.w.Write(w.Bytes())
-				r.w.WriteString(`}`)
+				w.Write(w.Bytes())
+				WriteString(w, `}`)
 			}
 			break
 		}
 
 		// Normal link
 		if entering {
-			r.w.WriteString(`\href{`)
-			r.w.Write(dest)
-			r.w.WriteString(`}{`)
+			WriteString(w, `\href{`)
+			w.Write(dest)
+			WriteString(w, `}{`)
 		} else {
-			r.w.WriteByte('}')
+			WriteByte(w, '}')
 		}
 
 	case bf.List:
@@ -457,16 +489,16 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 		if node.ListFlags&bf.ListTypeDefinition != 0 {
 			listType = "description"
 		}
-		r.Env(listType, entering)
+		r.Env(w, listType, entering)
 
 	case bf.Paragraph:
 		if !entering {
 			// If paragraph is the term of a definition list, don't insert new lines.
 			if node.Parent.Type != bf.Item || node.Parent.ListFlags&bf.ListTypeTerm == 0 {
-				r.w.WriteByte('\n')
+				WriteByte(w, '\n')
 				// Don't insert an additional linebreak after last node of an item, a quote, etc.
 				if node.Next != nil {
-					r.w.WriteByte('\n')
+					WriteByte(w, '\n')
 				}
 			}
 		}
@@ -477,23 +509,78 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 		break
 
 	case bf.Strong:
-		r.Cmd("textbf", entering)
+		r.Cmd(w, "textbf", entering)
 
 	case bf.Table:
+		border := node.TableData.Border
+
 		if entering {
-			r.w.WriteString(`\begin{center}` + "\n" + `\begin{tabular}{`)
+			WriteString(w, `\begin{center}`+"\n"+`\begin{tabular}{`)
 			node.Walk(func(c *bf.Node, entering bool) bf.WalkStatus {
 				if c.Type == bf.TableCell && entering {
+					i := 0
+
+					var writed, sep bool
+					if border.Left {
+						WriteByte(w, '|')
+					}
 					for cell := c; cell != nil; cell = cell.Next {
-						r.w.WriteByte(cellAlignment[cell.Align])
+						writed = false
+						sep = border.Column
+
+						if cell.TableCellData.Opts == nil {
+							if cell.TableCellData.IsLast {
+								sep = false
+							}
+						} else {
+							var width decimal.Decimal
+							if v, ok := cell.TableCellData.Opts["width"]; ok {
+								width, _ = v.(decimal.Decimal)
+							}
+							if sep {
+								if cell.TableCellData.IsLast {
+									sep = false
+								}
+							} else if v, ok := cell.TableCellData.Opts["sep"]; ok {
+								sep, _ = v.(bool)
+							}
+							if !width.IsZero() {
+								WriteString(w, fmt.Sprintf(`p{%s\textwidth}`, width))
+								switch cell.Align {
+								case bf.TableAlignmentRight:
+									WriteString(w, `<{\raggedleft\arraybackslash}`)
+								case bf.TableAlignmentCenter:
+									WriteString(w, `<{\centering\arraybackslash}`)
+								case bf.TableAlignmentLeft:
+								}
+								writed = true
+							}
+						}
+						if !writed {
+							WriteByte(w, cellAlignment[cell.Align])
+						}
+						if sep {
+							WriteByte(w, '|')
+						}
+						i++
+					}
+
+					if !sep && border.Rigth {
+						WriteByte(w, '|')
 					}
 					return bf.Terminate
 				}
 				return bf.GoToNext
 			})
-			r.w.WriteString("}\n")
+			WriteString(w, "}\n")
+			if border.Top {
+				WriteString(w, "\\hline\n")
+			}
 		} else {
-			r.w.WriteString(`\end{tabular}` + "\n" + `\end{center}` + "\n\n")
+			if border.Bottom {
+				WriteString(w, "\\hline\n")
+			}
+			WriteString(w, `\end{tabular}`+"\n"+`\end{center}`+"\n\n")
 		}
 
 	case bf.TableBody:
@@ -502,25 +589,37 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 
 	case bf.TableCell:
 		if node.IsHeader {
-			r.Cmd("textbf", entering)
+			r.Cmd(w, "textbf", entering)
 		}
 		if !entering && node.Next != nil {
-			r.w.WriteString(" & ")
+			WriteString(w, " & ")
 		}
 
 	case bf.TableHead:
 		if !entering {
-			r.w.WriteString(`\hline` + "\n")
+			WriteString(w, `\hline`+"\n")
 		}
 
 	case bf.TableRow:
 		if !entering {
-			r.w.WriteString(` \\` + "\n")
+			if node.Parent.Parent.TableData.Border.Row {
+				if node.Parent.Type == bf.TableBody {
+					if node.TableRowData.IsLast {
+						WriteString(w, ` \\`+"\n")
+					} else {
+						WriteString(w, ` \\ \hline`+"\n")
+					}
+				} else {
+					WriteString(w, ` \\`+"\n")
+				}
+			} else {
+				WriteString(w, ` \\`+"\n")
+			}
 		}
 
 	case bf.Text:
 		if len(node.Literal) > 0 {
-			r.Escape(node.Literal)
+			r.Escape(w, node.Literal)
 		}
 		break
 
@@ -533,17 +632,18 @@ func (r *Renderer) RenderNode(w io.Writer, node *bf.Node, entering bool) bf.Walk
 // Get title: concatenate all Text children of Titleblock.
 func getTitle(ast *bf.Node) []byte {
 	titleRenderer := Renderer{}
+	var buf bytes.Buffer
 
 	ast.Walk(func(node *bf.Node, entering bool) bf.WalkStatus {
 		if node.Type == bf.Heading && node.HeadingData.IsTitleblock && entering {
 			node.Walk(func(c *bf.Node, entering bool) bf.WalkStatus {
-				return titleRenderer.RenderNode(&titleRenderer.w, c, entering)
+				return titleRenderer.RenderNode(&buf, c, entering)
 			})
 			return bf.Terminate
 		}
 		return bf.GoToNext
 	})
-	return titleRenderer.w.Bytes()
+	return buf.Bytes()
 }
 
 func hasFigures(ast *bf.Node) bool {
@@ -660,11 +760,11 @@ func (r *Renderer) RenderHeader(w io.Writer, ast *bf.Node) {
 `)
 
 		if title != "" {
-			r.w.WriteString(`
+			WriteString(w, `
 \maketitle
 `)
 			if r.Flags&TOC != 0 {
-				r.w.WriteString(`\vfill
+				WriteString(w, `\vfill
 \thispagestyle{empty}
 
 \tableofcontents
@@ -692,26 +792,25 @@ func (r *Renderer) RenderFooter(w io.Writer, ast *bf.Node) {
 }
 
 // Render prints out the whole document from the ast, header and footer included.
-func (r *Renderer) Render(ast *bf.Node) []byte {
-	r.RenderHeader(&r.w, ast)
+func (r *Renderer) Render(w io.Writer, ast *bf.Node) {
+	r.RenderHeader(w, ast)
 	ast.Walk(func(node *bf.Node, entering bool) bf.WalkStatus {
 		if node.Type == bf.Heading && node.HeadingData.IsTitleblock {
 			return bf.SkipChildren
 		}
-		return r.RenderNode(&r.w, node, entering)
+		return r.RenderNode(w, node, entering)
 	})
 
-	r.RenderFooter(&r.w, ast)
-	return r.w.Bytes()
+	r.RenderFooter(w, ast)
 }
 
 // Run prints out the whole document with CompletePage and TOC flags enabled.
-func Run(input []byte, opts ...bf.Option) []byte {
+func Run(w io.Writer, input []byte, opts ...bf.Option) {
 	renderer := &Renderer{Opts: Opts{Flags: CompletePage | TOC}}
 
 	optList := []bf.Option{bf.WithRenderer(renderer), bf.WithExtensions(bf.CommonExtensions)}
 	optList = append(optList, opts...)
 	parser := bf.New(optList...)
 	ast := parser.Parse(input)
-	return renderer.Render(ast)
+	renderer.Render(w, ast)
 }

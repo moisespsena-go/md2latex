@@ -17,7 +17,9 @@ package cmd
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,11 +34,8 @@ var cfgFile string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "md2latex SRC DST",
+	Use:   "md2latex [SRC DST]",
 	Short: "converts markdown to latex",
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	//	Run: func(cmd *cobra.Command, args []string) { },
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		if len(args) == 0 {
 			args = []string{viper.GetString("src"), viper.GetString("dst")}
@@ -69,18 +68,21 @@ var rootCmd = &cobra.Command{
 			inputFile = args[0]
 			config    = make(map[string]*m2l.LatexRaw)
 			joined    = orString("joined")
-			work      = orString("work-dir")
+			work      = orString("work_dir")
 
 			opts = m2l.Opts{
 				EnvQuotation: viper.GetString("latex.envs.quotation"),
 			}
+
+			f       finder
+			finderF func(root string, cb func(pth string) error) error
 		)
 
 		if work == "" {
 			work = "."
 		}
 
-		if cfg := orSliceMap("latex-raw-file", "latex.raw-files"); len(cfg) > 0 {
+		if cfg := orSliceMap("latex-raw-file", "latex.raw_files"); len(cfg) > 0 {
 			for _, v := range cfg {
 				if pos := strings.IndexByte(v, ':'); pos > 0 {
 					config[v[0:pos]] = &m2l.LatexRaw{Dst: v[pos+1:]}
@@ -88,7 +90,7 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		return m2l.Exec(m2l.RunConfig{
+		cfg := m2l.RunConfig{
 			Input:         inputFile,
 			JoinedOutput:  joined,
 			RootDir:       work,
@@ -96,7 +98,53 @@ var rootCmd = &cobra.Command{
 			LatexRawFiles: config,
 			Output:        args[1],
 			Opts:          opts,
-		})
+		}
+
+		if err = viper.UnmarshalKey("find_by", &f); err != nil {
+			return
+		}
+
+		if f.WorkDir == "" {
+			f.WorkDir = "."
+		}
+
+		if f.Name != "" {
+			finderF = func(root string, cb func(pth string) error) error {
+				var FS = os.DirFS(f.WorkDir)
+				return fs.WalkDir(FS, ".", func(pth string, d fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if d.IsDir() {
+						if pth != "." && pth[0] == '.' {
+							return fs.SkipDir
+						}
+						var sub fs.FS
+						if sub, err = fs.Sub(FS, pth); err != nil {
+							return err
+						}
+						if _, err := fs.Stat(sub, f.Name); err == nil {
+							if err = cb(filepath.Join(pth, f.Name)); err != nil {
+								return err
+							}
+							return fs.SkipDir
+						}
+					}
+					return nil
+				})
+			}
+		}
+
+		if finderF != nil {
+			return finderF(work, func(pth string) error {
+				c := cfg
+				c.Input = f.Name
+				c.RootDir = m2l.FormatFileName(c.RootDir, pth)
+				return m2l.Exec(c)
+			})
+		}
+
+		return m2l.Exec(cfg)
 	},
 }
 
@@ -149,4 +197,9 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
+}
+
+type finder struct {
+	WorkDir string `mapstructure:"work_dir"`
+	Name    string `mapstructure:"name"`
 }
