@@ -1,0 +1,38 @@
+FROM ubuntu:18.04
+
+USER root
+
+ENV GOROOT=/opt/go
+ENV HOME=/root
+ENV PATH=$GOROOT/bin:$PATH
+ENV GOPATH=$HOME/go
+ENV d=$HOME/go/src/github.com/moisespsena-go
+
+RUN apt-get update && \
+    apt-get install -y git wget curl
+
+RUN cd opt && \
+    wget https://go.dev/dl/go1.18.linux-amd64.tar.gz && \
+    tar -zxf go1.18.linux-amd64.tar.gz && \
+    chmod -R o+w $GOROOT
+
+ENV commit_hash=__HASH__
+
+RUN mkdir -p "$d" && \
+    cd "$d" && \
+    git clone https://github.com/moisespsena-go/md2latex.git md2latex && \
+    cd md2latex && \
+    git checkout $commit_hash && \
+    cd cmd/md2latex && \
+    go get . && \
+    go build -ldflags="-X 'main.CommitID=$commit_hash'" . && \
+    mv -v md2latex /usr/bin && \
+    md2latex version
+
+RUN apt-get purge -y git wget curl && \
+    apt-get autoremove -y && \
+    apt clean && \
+    rm -rf $GOROOT && \
+    rm -rf /home/go
+
+ENTRYPOINT ["md2latex"]
