@@ -113,7 +113,7 @@ func (c *PathFS) readFile(out io.Writer, pth string, count *int, depth int) (err
 	if depth == 0 {
 		fmt.Fprintf(os.Stderr, "include %03d: %s: %s\n", *count, c.Dir, pth)
 	} else {
-		fmt.Fprintf(os.Stderr, "include %03d: %s: %s %s\n", *count, c.Dir, strings.Repeat("--", depth), pth)
+		fmt.Fprintf(os.Stderr, "include %s %03d: %s: %s\n", strings.Repeat("--", depth), *count, c.Dir, pth)
 	}
 
 	if f, err = c.Open(pth); err != nil {
