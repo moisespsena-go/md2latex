@@ -39,8 +39,14 @@ var rootCmd = &cobra.Command{
 	Short: "converts markdown to latex",
 	RunE: func(cmd *cobra.Command, args []string) (err error) {
 		if len(args) == 0 {
-			args = []string{viper.GetString("src"), viper.GetString("dst")}
+			if s := viper.GetString("src"); s != "" {
+				args = append(args, s)
+			}
+			if s := viper.GetString("dst"); s != "" {
+				args = append(args, s)
+			}
 		}
+
 		if len(args) != 2 {
 			return fmt.Errorf("accepts 2 arg(s), received %d", len(args))
 		}
@@ -110,11 +116,16 @@ var rootCmd = &cobra.Command{
 
 		if f.WorkDir == "" || f.WorkDir == "." {
 			f.WorkDir = work
+		} else {
+			f.WorkDir = filepath.Join(work, filepath.Clean(f.WorkDir))
 		}
 
 		if f.Name != "" {
 			finderF = func(root string, cb func(fs fs.FS, pth string) error) error {
-				var FS = os.DirFS(f.WorkDir)
+				var (
+					FS         = os.DirFS(f.WorkDir)
+					relWork, _ = filepath.Rel(work, f.WorkDir)
+				)
 				return fs.WalkDir(FS, ".", func(pth string, d fs.DirEntry, err error) error {
 					if err != nil {
 						return err
@@ -128,7 +139,7 @@ var rootCmd = &cobra.Command{
 							return err
 						}
 						if _, err := fs.Stat(sub, f.Name); err == nil {
-							if err = cb(sub, filepath.Join(pth, f.Name)); err != nil {
+							if err = cb(sub, filepath.Join(relWork, pth, f.Name)); err != nil {
 								return err
 							}
 							return fs.SkipDir
