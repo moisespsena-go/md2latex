@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -62,20 +63,20 @@ var rootCmd = &cobra.Command{
 				if v, _ := flags.GetString(a); len(v) > 0 {
 					return v
 				}
-				return viper.GetString(a)
+				return viper.GetString(strings.ReplaceAll(a, "-", "_"))
 			}
 
 			inputFile = args[0]
 			config    = make(map[string]*m2l.LatexRaw)
 			joined    = orString("joined")
-			work      = orString("work_dir")
+			work      = orString("work-dir")
 
 			opts = m2l.Opts{
 				EnvQuotation: viper.GetString("latex.envs.quotation"),
 			}
 
 			f       finder
-			finderF func(root string, cb func(pth string) error) error
+			finderF func(root string, cb func(FS fs.FS, pth string) error) error
 		)
 
 		if work == "" {
@@ -91,9 +92,12 @@ var rootCmd = &cobra.Command{
 		}
 
 		cfg := m2l.RunConfig{
+			PathFS: m2l.PathFS{
+				RootDir: work,
+				FS:      m2l.DirFS(work),
+			},
 			Input:         inputFile,
 			JoinedOutput:  joined,
-			RootDir:       work,
 			Now:           time.Now(),
 			LatexRawFiles: config,
 			Output:        args[1],
@@ -104,12 +108,12 @@ var rootCmd = &cobra.Command{
 			return
 		}
 
-		if f.WorkDir == "" {
-			f.WorkDir = "."
+		if f.WorkDir == "" || f.WorkDir == "." {
+			f.WorkDir = work
 		}
 
 		if f.Name != "" {
-			finderF = func(root string, cb func(pth string) error) error {
+			finderF = func(root string, cb func(fs fs.FS, pth string) error) error {
 				var FS = os.DirFS(f.WorkDir)
 				return fs.WalkDir(FS, ".", func(pth string, d fs.DirEntry, err error) error {
 					if err != nil {
@@ -124,7 +128,7 @@ var rootCmd = &cobra.Command{
 							return err
 						}
 						if _, err := fs.Stat(sub, f.Name); err == nil {
-							if err = cb(filepath.Join(pth, f.Name)); err != nil {
+							if err = cb(sub, filepath.Join(pth, f.Name)); err != nil {
 								return err
 							}
 							return fs.SkipDir
@@ -136,10 +140,12 @@ var rootCmd = &cobra.Command{
 		}
 
 		if finderF != nil {
-			return finderF(work, func(pth string) error {
+			return finderF(work, func(FS fs.FS, pth string) error {
 				c := cfg
-				c.Input = f.Name
+				c.Input = path.Base(pth)
 				c.RootDir = m2l.FormatFileName(c.RootDir, pth)
+				c.Dir = path.Dir(pth)
+				c.FS = m2l.DirFS(c.RootDir)
 				return m2l.Exec(c)
 			})
 		}

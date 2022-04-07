@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -24,12 +23,13 @@ type LatexRaw struct {
 
 type RunConfig struct {
 	Now           time.Time
+	FS            FS
 	Input         string
 	Output        string
-	RootDir       string
 	JoinedOutput  string
 	LatexRawFiles map[string]*LatexRaw
 	Opts          Opts
+	PathFS
 }
 
 type DevNull struct {
@@ -69,18 +69,8 @@ func Exec(cfg RunConfig) (err error) {
 		}
 
 		createFile = func(pth string, data []byte) (err error) {
-			pth = filepath.Join(cfg.RootDir, pth)
-			defer func() {
-				if err != nil {
-					err = fmt.Errorf("create %q: %s", pth, err)
-				}
-			}()
-			d := filepath.Dir(pth)
-			if err = os.MkdirAll(d, 0775); err != nil {
-				return
-			}
-			var f *os.File
-			if f, err = os.Create(pth); err != nil {
+			var f io.WriteCloser
+			if f, err = cfg.PathFS.CreateAll(pth); err != nil {
 				return
 			}
 			defer f.Close()
@@ -110,7 +100,7 @@ func Exec(cfg RunConfig) (err error) {
 	fmt.Fprintln(os.Stderr, "joined output: ", cfg.JoinedOutput)
 	defer fmt.Fprintln(os.Stderr, "======>> end", cfg.Input, "<<======")
 
-	if err = ReadFile(&input, cfg.RootDir, filepath.Join(cfg.RootDir, path.Dir(cfg.Input)), path.Base(cfg.Input)); err != nil {
+	if err = cfg.PathFS.ReadFile(&input, cfg.Input); err != nil {
 		return
 	}
 
